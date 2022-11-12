@@ -38,9 +38,8 @@ namespace Hazel {
 		{ "Hazel.Entity", ScriptFieldType::Entity },
 	};
 
-	namespace Utils {
-
-		// TODO: move to FileSystem class
+	namespace Utils
+	{
 		static char* ReadBytes(const std::filesystem::path& filepath, uint32_t* outSize)
 		{
 			std::ifstream stream(filepath, std::ios::binary | std::ios::ate);
@@ -189,6 +188,8 @@ namespace Hazel {
 		}
 	}
 
+
+#pragma region ScriptEngine Management
 	void ScriptEngine::Init()
 	{
 		s_Data = new ScriptEngineData();
@@ -281,7 +282,9 @@ namespace Hazel {
 		mono_jit_cleanup(s_Data->RootDomain);
 		s_Data->RootDomain = nullptr;
 	}
+#pragma endregion
 
+#pragma region Assembly Loading
 	void ScriptEngine::LoadAssembly(const std::filesystem::path& filepath)
 	{
 		// Create an App Domain
@@ -323,90 +326,6 @@ namespace Hazel {
 
 		// Retrieve and instantiate class
 		s_Data->EntityClass = ScriptClass("Hazel", "Entity", true);
-	}
-
-	void ScriptEngine::OnRuntimeStart(Scene* scene)
-	{
-		s_Data->SceneContext = scene;
-	}
-
-	bool ScriptEngine::EntityClassExists(const std::string& fullClassName)
-	{
-		return s_Data->EntityClasses.find(fullClassName) != s_Data->EntityClasses.end();
-	}
-
-	void ScriptEngine::OnCreateEntity(Entity entity)
-	{
-		const auto& sc = entity.GetComponent<ScriptComponent>();
-		if (ScriptEngine::EntityClassExists(sc.ClassName))
-		{
-			UUID entityID = entity.GetUUID();
-
-			Ref<ScriptInstance> instance = CreateRef<ScriptInstance>(s_Data->EntityClasses[sc.ClassName], entity);
-			s_Data->EntityInstances[entityID] = instance;
-
-			// Copy field values
-			if (s_Data->EntityScriptFields.find(entityID) != s_Data->EntityScriptFields.end())
-			{
-				const ScriptFieldMap& fieldMap = s_Data->EntityScriptFields.at(entityID);
-				for (const auto& [name, fieldInstance] : fieldMap)
-					instance->SetFieldValueInternal(name, fieldInstance.m_Buffer);
-			}
-
-			instance->InvokeOnCreate();
-		}
-	}
-
-	void ScriptEngine::OnUpdateEntity(Entity entity, Timestep ts)
-	{
-		UUID entityUUID = entity.GetUUID();
-		HZ_CORE_ASSERT(s_Data->EntityInstances.find(entityUUID) != s_Data->EntityInstances.end());
-
-		Ref<ScriptInstance> instance = s_Data->EntityInstances[entityUUID];
-		instance->InvokeOnUpdate((float)ts);
-	}
-
-	Scene* ScriptEngine::GetSceneContext()
-	{
-		return s_Data->SceneContext;
-	}
-
-	Ref<ScriptInstance> ScriptEngine::GetEntityScriptInstance(UUID entityID)
-	{
-		auto it = s_Data->EntityInstances.find(entityID);
-		if (it == s_Data->EntityInstances.end())
-			return nullptr;
-
-		return it->second;
-	}
-
-
-	Ref<ScriptClass> ScriptEngine::GetEntityClass(const std::string& name)
-	{
-		if (s_Data->EntityClasses.find(name) == s_Data->EntityClasses.end())
-			return nullptr;
-
-		return s_Data->EntityClasses.at(name);
-	}
-
-	void ScriptEngine::OnRuntimeStop()
-	{
-		s_Data->SceneContext = nullptr;
-
-		s_Data->EntityInstances.clear();
-	}
-
-	std::unordered_map<std::string, Ref<ScriptClass>> ScriptEngine::GetEntityClasses()
-	{
-		return s_Data->EntityClasses;
-	}
-
-	ScriptFieldMap& ScriptEngine::GetScriptFieldMap(Entity entity)
-	{
-		HZ_CORE_ASSERT(entity);
-
-		UUID entityID = entity.GetUUID();
-		return s_Data->EntityScriptFields[entityID];
 	}
 
 	void ScriptEngine::LoadAssemblyClasses()
@@ -476,8 +395,94 @@ namespace Hazel {
 	{
 		return s_Data->CoreAssemblyImage;
 	}
+#pragma endregion
 
+#pragma region ENTT/ECS
+	void ScriptEngine::OnRuntimeStart(Scene* scene)
+	{
+		s_Data->SceneContext = scene;
+	}
 
+	bool ScriptEngine::EntityClassExists(const std::string& fullClassName)
+	{
+		return s_Data->EntityClasses.find(fullClassName) != s_Data->EntityClasses.end();
+	}
+
+	void ScriptEngine::OnCreateEntity(Entity entity)
+	{
+		const auto& sc = entity.GetComponent<ScriptComponent>();
+		if (ScriptEngine::EntityClassExists(sc.ClassName))
+		{
+			UUID entityID = entity.GetUUID();
+
+			Ref<ScriptInstance> instance = CreateRef<ScriptInstance>(s_Data->EntityClasses[sc.ClassName], entity);
+			s_Data->EntityInstances[entityID] = instance;
+
+			// Copy field values
+			if (s_Data->EntityScriptFields.find(entityID) != s_Data->EntityScriptFields.end())
+			{
+				const ScriptFieldMap& fieldMap = s_Data->EntityScriptFields.at(entityID);
+				for (const auto& [name, fieldInstance] : fieldMap)
+					instance->SetFieldValueInternal(name, fieldInstance.m_Buffer);
+			}
+
+			instance->InvokeOnCreate();
+		}
+	}
+
+	void ScriptEngine::OnUpdateEntity(Entity entity, Timestep ts)
+	{
+		UUID entityUUID = entity.GetUUID();
+		HZ_CORE_ASSERT(s_Data->EntityInstances.find(entityUUID) != s_Data->EntityInstances.end());
+
+		Ref<ScriptInstance> instance = s_Data->EntityInstances[entityUUID];
+		instance->InvokeOnUpdate((float)ts);
+	}
+
+	Scene* ScriptEngine::GetSceneContext()
+	{
+		return s_Data->SceneContext;
+	}
+
+	Ref<ScriptInstance> ScriptEngine::GetEntityScriptInstance(UUID entityID)
+	{
+		auto it = s_Data->EntityInstances.find(entityID);
+		if (it == s_Data->EntityInstances.end())
+			return nullptr;
+
+		return it->second;
+	}
+
+	Ref<ScriptClass> ScriptEngine::GetEntityClass(const std::string& name)
+	{
+		if (s_Data->EntityClasses.find(name) == s_Data->EntityClasses.end())
+			return nullptr;
+
+		return s_Data->EntityClasses.at(name);
+	}
+
+	void ScriptEngine::OnRuntimeStop()
+	{
+		s_Data->SceneContext = nullptr;
+
+		s_Data->EntityInstances.clear();
+	}
+
+	std::unordered_map<std::string, Ref<ScriptClass>> ScriptEngine::GetEntityClasses()
+	{
+		return s_Data->EntityClasses;
+	}
+
+	ScriptFieldMap& ScriptEngine::GetScriptFieldMap(Entity entity)
+	{
+		HZ_CORE_ASSERT(entity);
+
+		UUID entityID = entity.GetUUID();
+		return s_Data->EntityScriptFields[entityID];
+	}
+#pragma endregion
+
+#pragma region ScriptClass/Instancing
 	MonoObject* ScriptEngine::GetManagedInstance(UUID uuid)
 	{
 		HZ_CORE_ASSERT(s_Data->EntityInstances.find(uuid) != s_Data->EntityInstances.end());
@@ -545,7 +550,6 @@ namespace Hazel {
 		}
 	}
 
-
 	bool ScriptInstance::GetFieldValueInternal(const std::string& name, void* buffer)
 	{
 		const auto& fields = m_ScriptClass->GetFields();
@@ -569,5 +573,6 @@ namespace Hazel {
 		mono_field_set_value(m_Instance, field.ClassField, (void*)value);
 		return true;
 	}
+#pragma endregion
 
 }
